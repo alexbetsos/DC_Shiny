@@ -31,7 +31,7 @@ type.of.drug <- data.frame(Drug.Name = c("6-MAM*", "Caffeine","Erythritol",
                                          "Glutamine", "Pantoprazole Sodium", "Codeine",
                                          "Albuterol sulfate","Citric Acid", "Gabapentin",
                                          "Sulfamethoxazole", "Sugar", "Sorbitol",
-                                         "MDA", "Ketamine"
+                                         "MDA", "Ketamine", "Etizolam"
                                          
                                          
 ),
@@ -68,7 +68,7 @@ Classification = c("Opioid", "Stimulant", "Buff",
                    "Buff", "Other", "Opioid",
                    "Other", "Buff", "Other",
                    "Other", "Buff", "Buff",
-                   "Stimulant", "Other")
+                   "Stimulant", "Other", "Benzodiazepine")
 )
 
 

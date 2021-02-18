@@ -105,7 +105,8 @@ dcbc2 <- dcbc2 %>%
                names_to = "name",
                values_to = "value") %>%
   filter(!is.na(value)) %>%
-  mutate(value = str_replace_all(value,c("Fentanyl HCl" = "Fentanyl or Analog", "Dextromethorphan" = "DXM",
+  mutate(value = str_replace_all(value,c("Fentanyl HCl" = "Fentanyl or Analog", 
+                                         "Dextromethorphan" = "DXM",
                                          "6-Monoacetylmorphine" = "6-MAM", "Surcrose" = "Sucrose", 
                                          "Polyethylene Glycol" = "PEG", "Lysergic Acid Diethylamide" = "LSD"
   ))) %>%
@@ -114,7 +115,8 @@ dcbc2 <- dcbc2 %>%
   mutate(value = str_replace(value, "Heroin \\Q(Trace)\\E", "Heroin")) %>%
   mutate(value = gsub("Uncertain Oil|Sugar Uncertain|Uncertain Carbohydrate",
                       "Uncertain Oil/Carb/Sugar", value)) %>%
-  mutate(value = str_replace(value, " HCl", ""))
+  mutate(value = str_replace(value, " HCl", "")) %>%
+  mutate(value = str_replace(value, "Fentanyl$", "Fentanyl or Analog"))
 
 op2 <- c(unique(dcbc2$Expected.Substance[grep("[Ff]ent", dcbc2$Expected.Substance)]),
          unique(dcbc2$Expected.Substance[grep("Her", dcbc2$Expected.Substance)]),
@@ -220,6 +222,7 @@ benzo$Percent[which(benzo$Week.val %in% closure)] <- -1
 benzo$Percent[which(is.na(benzo$Percent))] <- -1
 
 benzo <- benzo[order(benzo$Days2),]
+get_id <- max(poss.w$ID)
 ####----TO SHINY---####
 library(ggraph)
 library(tidygraph)
@@ -253,7 +256,8 @@ ui <- fluidPage(
                                        sliderTextInput("Change",
                                                        label = NULL,
                                                        choices = as.character(poss.w$Days2),
-                                                       selected = as.character(poss.w$Days2[tail(poss.w$Days2, n = 1)]),
+                                                       selected = as.character(unique(poss.w$Days2[
+                                                         poss.w$ID == get_id])),
                                                        grid = TRUE,
                                                        width = "1200px",
                                                        force_edges = TRUE)),
