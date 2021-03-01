@@ -176,6 +176,11 @@ coul  <- brewer.pal(length(unique(down.node$Classification)), "Set3")
 my_colors <- coul[as.numeric(as.factor(unique(down.node$Classification)))]
 names(my_colors) <- unique(down.node$Classification)
 
+top_nodes <- down.node %>%
+  group_by(Week.val, Expected) %>%
+  summarize(Max_w = max(Weight), )
+node_ids <- down.node$ID[down.node$Weight %in% down.no]
+
 
 interest <- c("Fentanyl/Down", "Opioids Minus Fentanyl (Grouped)", "All Opioids (Grouped)", "Methamphetamine",
               "Ketamine", "Cocaine", "Crack Cocaine", "MDMA")
@@ -350,12 +355,12 @@ server <- function(input, output) {
     validate(
       need(nrow(edges) >1, "Not tested During this Time")
     )
-    
+
     colnames(edges) <- c("to", "from", "weight")
     edges$from <- nodes()$ID[match(edges$from, nodes()$Names)]
     edges$to <- nodes()$ID[match(edges$to, nodes()$Names)]
     edges <- select(edges, from, to, weight)
-    
+
     g <- graph_from_data_frame(d = edges, vertices = nodes(), directed = FALSE) 
     g <- simplify(g, remove.loops = TRUE)
     if(grepl("Fentanyl/Down", input$Drug) == TRUE){
