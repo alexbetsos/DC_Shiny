@@ -1,21 +1,21 @@
-####----Link for APP---####
+####----Link for APP webscrapes data Monday night---####
 gitlink <- "https://gitlab.com/coolsoftwaredev/drug_checking_data_scraper/-/jobs/artifacts/master/raw/dcbc.csv?job=run"
 
-
+#Read in the file
 dcbc <- read.csv(gitlink, na.strings=c("N/A",""), stringsAsFactors=FALSE)
 ####---Libraries & Functions---####
 library(tidyverse)
 library(lubridate)
 library(igraph)
 library(RColorBrewer)
-
+#install.packages("plyr") #I use this for count because I'm too lazy to learn tidyverse
 `%notin%` <- Negate(`%in%`) #For laziness
 every_nth = function(n) {
   return(function(x) {x[c(TRUE, rep(FALSE, n - 1))]})     #Just for ggplot
 } 
-#install.packages("plyr") #I use this for count because I'm too lazy to learn tidyverse
+
 ####---Dates----####
-#Creates a df of date ranges to be used later for making factors for the x-axis
+#Creates a data frame of date ranges to be used later for making sliding scale in network graph and line chart
 everydate <- seq(ymd('2019-12-29'),floor_date(Sys.Date(), unit = "week", week_start = 1)+days(7),by = '1 day')
 poss.w <- data.frame(Days = everydate, 
                      Bottom = floor_date(everydate, unit = "week", week_start = getOption("lubridate.week.start", 1)))
@@ -30,22 +30,21 @@ poss.w$Days2 <- paste(month(poss.w$Bottom, label = TRUE)," ", day(poss.w$Bottom)
 poss.w$Days2 <- ordered(poss.w$ID, labels = unique(poss.w$Days2))
 
 ####----General Cleaning from Scrape----####
-
-
 dcbc$FTIR.Spectrometer<- gsub("\\Q['\\E|\\Q']\\E|\\Q'\\E", "", dcbc$FTIR.Spectrometer)
-dcbc <- separate(dcbc, FTIR.Spectrometer , into = c("FTIR.1", "FTIR.2", "FTIR.3", "FTIR.4", "FTIR.5", "FTIR.6"), sep = ", ",
-                 extra = "merge", fill = "right", remove = FALSE)
+dcbc <- separate(dcbc, FTIR.Spectrometer ,
+                 into = c("FTIR.1", "FTIR.2", "FTIR.3", "FTIR.4", "FTIR.5", "FTIR.6"),
+                 sep = ", ", extra = "merge",
+                 fill = "right", remove = FALSE)
 
-###----Variables used i
+###---All opioids----####
 op2 <- c(unique(dcbc$Expected.Substance[grep("[Ff]ent", dcbc$Expected.Substance)]),
          unique(dcbc$Expected.Substance[grep("Her", dcbc$Expected.Substance)]),
          "Down (Unknown Opioid)", "Oxycodone", "Methadone", "Morphine", "Heroin HCl",
          "6-Monoacetylmorphine", "Oxycodone HCl", "Fentanyl HCl", "Fentanyl or Analog")
-###---All opioids----####
 
 #####----More Cleaning ----####
 #This section could be rewritten
-dcbc2 <- dcbc
+dcbc2 <- dcbc #backup, just in case
 dcbc2 <- dcbc2[dcbc2$City.Town == "Vancouver" & dcbc2$Date > as.Date("2019-12-28"),]
 dcbc2$Date <- as.Date(dcbc2$Date, format = "%Y-%m-%d")
 poss.w <- poss.w[poss.w$Days >= min(dcbc2$Date) & poss.w$Days <= date(head(dcbc2$Date, n = 1)),]
@@ -63,10 +62,7 @@ dcbc2$Benzo.Test.Strip <- as.numeric(dcbc2$Benzo.Test.Strip)
 benzo.match <- unlist(dcbc2[,c(8:13)]) %>%
   .[grepl("epam|olam", .)]
 benzo.match <- unique(benzo.match)
-
 dcbc2$has.benzo <- 0
-dcbc2 <- dcbc2 %>%
-  mutate(is.fent = ifelse(str_detect(FTIR.Spectrometer, "[Ff]ent"), 1,0))
 
 #Finds all benzo positive strips which do not have positive benzo responses
 dcbc2$has.benzo[dcbc2$FTIR.1 %notin% benzo.match & dcbc2$Benzo.Test.Strip ==1 &
@@ -74,6 +70,7 @@ dcbc2$has.benzo[dcbc2$FTIR.1 %notin% benzo.match & dcbc2$Benzo.Test.Strip ==1 &
                   dcbc2$FTIR.4 %notin% benzo.match & dcbc2$FTIR.5 %notin% benzo.match &
                   dcbc2$FTIR.6 %notin% benzo.match] <- 1
 #loop finds the positive fent and benzo strips where they are not listed
+#Answer from stackoverflow: https://stackoverflow.com/a/64994253/7263991
 cols_have <- paste("FTIR", 1:6, sep=".")
 colidx <- names(dcbc2) %in% cols_have
 for(i in 1:2){
@@ -88,7 +85,7 @@ for(i in 1:2){
     dcbc2[colidx][na.omit(cbind(which(ri), ci[ri]))] <- "Benzodiazepine <5%"
   }
 }
-#To make the graphs I either had to create loops or include "no cuts" - I think it's worked out
+#In order to compute the data all FTIR.2 cannot be empty - no cuts, represents when no adulterants were found
 dcbc2$FTIR.2[which(is.na(dcbc2$FTIR.2))] <- paste("No Cuts\n", dcbc2$FTIR.1[which(is.na(dcbc2$FTIR.2))], sep = "")
 dcbc2$FTIR.1[which(grepl("No Cuts", dcbc2$FTIR.2))] <- dcbc2$FTIR.2[which(grepl("No Cuts", dcbc2$FTIR.2))]
 dcbc2 <- dcbc2[dcbc2$FTIR.1 != "",] %>%
@@ -100,7 +97,8 @@ rownames(dcbc2) <- NULL
 ####---String replacement!----####
 
 dcbc2 <- dcbc2 %>%
-  mutate(Expected.Substance = gsub("Down \\Q(Unknown Opioid)\\E|Fentanyl","Fentanyl/Down",Expected.Substance)) %>%
+  mutate(Expected.Substance = gsub("Down \\Q(Unknown Opioid)\\E|Fentanyl","Fentanyl/Down",
+                                   Expected.Substance)) %>%
   pivot_longer(cols = c(FTIR.1:FTIR.6),
                names_to = "name",
                values_to = "value") %>%
@@ -108,9 +106,9 @@ dcbc2 <- dcbc2 %>%
   mutate(value = str_replace_all(value,c("Fentanyl HCl" = "Fentanyl or Analog", 
                                          "Dextromethorphan" = "DXM",
                                          "6-Monoacetylmorphine" = "6-MAM", "Surcrose" = "Sucrose", 
-                                         "Polyethylene Glycol" = "PEG", "Lysergic Acid Diethylamide" = "LSD"
+                                         "Polyethylene Glycol" = "PEG", "Lysergic Acid Diethylamide" = "LSD", 
+                                         "Cocaine Base" = "Crack Cocaine", "etizolam" = "Etizolam"
   ))) %>%
-  mutate(value = str_replace(value,"Cocaine base", "Crack Cocaine")) %>%
   mutate(value = str_replace(value,"Sugar Possibly [A-Za-z]+", "Sugar Uncertain")) %>%
   mutate(value = str_replace(value, "Heroin \\Q(Trace)\\E", "Heroin")) %>%
   mutate(value = gsub("Uncertain Oil|Sugar Uncertain|Uncertain Carbohydrate",
@@ -118,14 +116,13 @@ dcbc2 <- dcbc2 %>%
   mutate(value = str_replace(value, " HCl", "")) %>%
   mutate(value = str_replace(value, "Fentanyl$", "Fentanyl or Analog"))
 
+#Remake this variable after the edits
 op2 <- c(unique(dcbc2$Expected.Substance[grep("[Ff]ent", dcbc2$Expected.Substance)]),
          unique(dcbc2$Expected.Substance[grep("Her", dcbc2$Expected.Substance)]),
          "Down (Unknown Opioid)", "Oxycodone", "Methadone", "Morphine", "Heroin HCl",
          "6-Monoacetylmorphine", "Oxycodone HCl")
 
 ####----Grouped Variables/drugs I care about----####
-
-
 all_opioids <- dcbc2[dcbc2$Expected.Substance %in% op2,]
 all_opioids$Expected.Substance <- "All Opioids (Grouped)"
 all_opioids$ID <- all_opioids$ID +1000000
@@ -134,55 +131,63 @@ op2 <- op2[op2 != "Fentanyl/Down"]
 min_down2 <- dcbc2[which(dcbc2$Expected.Substance %in% op2),]
 min_down2$Expected.Substance <- "Opioids Minus Fentanyl (Grouped)"
 min_down2$ID <-min_down2$ID + 200000
-
+true_op <- all_opioids %>%
+  pivot_wider(names_from=name, values_from=value)
 dcbc2 <- rbind(dcbc2, min_down2, all_opioids)
 dcbc2 <- dcbc2[order(dcbc2$Week.val),]
 
+#Limits the number of in the dropdown
 interest <- c("Fentanyl/Down", "Opioids Minus Fentanyl (Grouped)", "All Opioids (Grouped)", "Methamphetamine",
               "Ketamine", "Cocaine", "Crack Cocaine", "MDMA")
 
 dcbc2 <- dcbc2[dcbc2$Expected.Substance %in% interest,]       #subset so to include a handful
-
+#
+#Regrouping variables
 
 ####----Stuff for ggraph - same things as ggplot####
 
 
 #Called here instead to not load into R until needed
+#This file was written by hand, and could use some additions
+#Categories were based off looking at fentanyl samples
 source("Drug Classification.R")
+#Need to add, "no cuts" into Drug Classification
+type.of.drug2 <- type.of.drug %>%
+  mutate(Drug.Name = paste("No Cuts",Drug.Name, sep = " "))
 
+type.of.drug <- rbind(type.of.drug, type.of.drug2)
+type.of.drug$Drug.Name <- gsub("(No Cuts) ", "\\1\n", type.of.drug$Drug.Name)
+
+rownames(type.of.drug) <- NULL
+rm(type.of.drug2)
+
+###Creates df for classification and the colour palette####
 df_sub <- which(names(dcbc2)%in%c("Week.val", "Expected.Substance", "value"))
 
-down.node <- plyr::count(dcbc2[,df_sub]) %>%
-  dplyr::rename(Expected = Expected.Substance, Names = value, Weight = freq)
-unique_id <- data.frame(value = unique(down.node$Names)) %>%
+node_col <- data.frame(Names = unique(dcbc2$value)) %>%
   rowid_to_column("ID")
-down.node$ID <- unique_id$ID[match(down.node$Names, unique_id$value)]
 
-
-
-#Creates class and colour so they're consistent every time shiny runs
-down.node$Classification <- type.of.drug$Classification[match(down.node$Names,type.of.drug$Drug.Name)]
+node_col$Classification <- type.of.drug$Classification[match(node_col$Names,type.of.drug$Drug.Name)]
 #Since the dictionary is handwritten  this next line just makes sure it won't throw errors
-down.node$Classification[is.na(down.node$Classification)] <- "new_val" 
-new_vals <- down.node[grepl("No Cuts\n", down.node$Names),]
-new_vals$Names <- gsub("No Cuts\n", "", new_vals$Names)
-
-new_vals$Classification <- type.of.drug$Classification[match(new_vals$Names,type.of.drug$Drug.Name)]
-new_vals$Classification[is.na(new_vals$Classification)] <- "new_val"
-new_vals <- new_vals[!duplicated(new_vals$ID), ]
-down.node$Classification2 <- new_vals$Classification[match(down.node$ID, new_vals$ID)]
-down.node$Classification[which(!is.na(down.node$Classification2))] <- down.node$Classification2[which(!is.na(down.node$Classification2))]
-coul  <- brewer.pal(length(unique(down.node$Classification)), "Set3")
-my_colors <- coul[as.numeric(as.factor(unique(down.node$Classification)))]
-names(my_colors) <- unique(down.node$Classification)
-
-top_nodes <- down.node %>%
-  group_by(Week.val, Expected) %>%
-  summarize(Max_w = max(Weight), )
-node_ids <- down.node$ID[down.node$Weight %in% down.no]
+node_col$Classification[is.na(node_col$Classification)] <- "new_val" 
+regrouped <- data.frame(ID = seq(2000, 1999+length(unique(node_col$Classification)),by=1),
+                        Names = unique(unique(node_col$Classification)),
+                        Classification = unique(unique(node_col$Classification)))
+node_col <- rbind(node_col, regrouped)
 
 
-interest <- c("Fentanyl/Down", "Opioids Minus Fentanyl (Grouped)", "All Opioids (Grouped)", "Methamphetamine",
+coul  <- brewer.pal(length(unique(node_col$Classification)), "Set3")
+my_colors <- coul[as.numeric(as.factor(unique(node_col$Classification)))]
+names(my_colors) <- unique(node_col$Classification)
+
+###-----------------------Notes----------------------------------------------####
+#Weight needs to be divided by 2 when "No Cuts" as it counts FTIR.1 & FTIR.2
+#
+#
+#
+####-------------------------------------------------------------------------####
+interest <- c("Fentanyl/Down", "Opioids Minus Fentanyl (Grouped)", "All Opioids (Grouped)",
+              "Methamphetamine",
               "Ketamine", "Cocaine", "Crack Cocaine", "MDMA")
 
 ###---BENZOS -----####
@@ -214,20 +219,25 @@ benzo$Days2 <- poss.w$Days2[match(benzo$Week.val, poss.w$Days2)]
 benzo <- benzo %>%
   pivot_longer(c(fent.count, benzo, fent.perc, benzo.perc), names_to = "name",
                values_to = "Percent") %>%
-  mutate(name = str_replace_all(name, c("fent.count" = "Count Fentanyl",
+  mutate(name = str_replace_all(name, c("fent.count" = "Fentanyl Count",
                                         "fent.perc"= "% Fentanyl","benzo.perc" = "% Benzo",
-                                        "benzo" = "Count Benzo"
+                                        "benzo" = "Benzo Count"
   )))
 
 #Days closed due to covid
 closure <-  c("Mar 16-\nMar 23\n2020", "Mar 23-\nMar 29\n2020", "Mar 30-\nApr 05\n2020")
 closure2 <- poss.w$Days2[poss.w$Days2 %in% closure]
 benzo$Percent[grepl("\\Q%\\E", benzo$name) & benzo$tot < 20] <- NA
-benzo$Percent[which(benzo$Week.val %in% closure)] <- -1
-benzo$Percent[which(is.na(benzo$Percent))] <- -1
+benzo$Percent[which(benzo$Week.val %in% closure)] <- NA
+benzo$Percent[which(is.na(benzo$Percent))] <- NA
 
 benzo <- benzo[order(benzo$Days2),]
-get_id <- max(poss.w$ID)
+poss.w <- poss.w %>%
+  select(ID, Days2) %>%
+  distinct(.)
+get_id <- c(max(poss.w$ID)-1, max(poss.w$ID))
+
+
 ####----TO SHINY---####
 library(ggraph)
 library(tidygraph)
@@ -238,20 +248,34 @@ ui <- fluidPage(
               #Instruction Page
               tabPanel("Instructions",
                        mainPanel(
-                         h1("What is this? - Intro to Online Drug Checking app"),
-                         p("It has been 5 years since BC first declared its overdose crisis. In 2017, after years of work by activists, small drug checking pilot projects began in Vancouver, where people who bought drugs from the illegal market could have them tested. They would then be relayed these results and told the approximate composition of the drug sample they submitted. In 2020 the team at the BCCSU made this data available here at", a("drugcheckingbc.ca", href = "https://drugcheckingbc.ca/")),
-                         p("This work could not have been done without extensive feedback, as well as advice from Karen Ward, who initially asked me for a weekly readout of the drug checking data. She's provided feedback throughout the design of the initial graphs - as well as requested the graphs found on the 'Benzo's and Opioids' page, specifically looking at the effects on supply & cheque day."),
-                         h1("How to Read the Data"),
-                         p("There are currently 2 pages here. The first is a network graph, with a sliding scale that shows drug checking results by Week, and where you can pick a handful of drugs to explore what other drugs they're found with. The size of the node is based on the number of times that substance was found, and the line between them, or the \' edges \' demonstrates how often they occurred together. Like so:"),
+                         h1("Vancouver Drug Checking"),
+                         p("It has been 5 years since BC first declared its overdose crisis. In 2017, after years of work by activists, small drug checking pilot projects began in Vancouver, where people who bought drugs from the illegal market could have them tested. They would then be relayed these results and told the approximate composition of the drug sample they submitted."),
+                         p("In 2020 the team at the BCCSU made this data available here at",
+                           a("drugcheckingbc.ca", href = "https://drugcheckingbc.ca/")),
+                         p("This work could not have been done without extensive feedback, as well as advice from Karen Ward, who initially asked me for a weekly readout of the drug checking data. She's provided feedback throughout the design of the initial graphs - as well as requested the graphs found on the 'Benzo's and Opioids' page, specifically looking at the effects on supply & cheque day. I've also received some technical (and emotional) support from Gjalt-Jorn Peters, and Adam Palayew."),
+                         p("While I've had some help this is a completely independent project I've done in my free time during the pandemic. All mistakes are mine."),
+                         h1("How to Use this Drug Checking Tool"),
+                         h2("Weekly Drug Checking Network - Network Visualization"),
+                         p("If we want to know how many times a drug was tested, we would count the total number of times it was found in the data. For example, between December 30th and January 5th 2020, 40 samples believed to be fentanyl were tested in Vancouver. If we wanted to know how many other drugs were found in those drugs samples, we'd make something like a bar chart. But what if we wanted to know how many times drugs, fillers and adulerants were found in the same week? The network graph on the page 'Weekly Drug Checking Network' attempts to visualize the relationship between all substances found by the FTIR."),
+                         p("Like so:"),
                          img(src='explanation_image.png', align = "left", height = "50%", width = "50%"),
-                         p(strong("This doesn't mean that every sample contained all of these drugs."), "It just means that all these substances have been found with the one in question. Currently the network graph works best for Fentanyl - and worse for the others... Such is life."),
-
-                         p("This has taken quite a bit of work, as a qualitative researcher this is not my forte - I hope that others who may be interested will look to develop and think about visualizing this data in new ways. In the future I might make these graphs more interactive."),
+                         p("The size of the",strong("node"),"represents the number of times that substance was found. The width of the", strong("edges"),"demonstrates how often they occurred together."),
+                         p(strong("This doesn't mean that every sample contained all of these drugs."), "It just means that all these substances have been found when the drug when someone has brought in a sample to be tested."),
+                         h3("Currently the app has these features"),
+                         p("- A sliding scale to check results by week (you can look up to 3 weeks at a time)"),
+                         p("- The Expected Substance, or what someone though they were testing"),
+                         p("- The ability to regroup the classifications"),
+                         p("- A Bar graph at the bottom that shows the counts for each substance"),
+                         p("Currently the network graph works best for Fentanyl - and worse for the others... Such is life."),
+                         h4("Notes about the classifications"),
+                         p("The classifications are written by hand by me - N/A = Something irrelevant eg. 'water'. new_val = something I haven't coded by hand. In making the choice whether something was 'buff','stimulant' or 'other', caffeine for eg. is included under stimulant because it has stimulant properties. In fentanyl it might be closer to a buff, but in MDMA or methamphetamine it has compounding effects. The 'other' category includes other drugs that do not fall into the classification system. Eg. I don't have a dissasociatives category - so Ketamine is listed as other. Buff includes any non-psychoactive substances that may work as fillers/excipients or inactive adulterants."),
                          br(""),
                          h1("Benzos and Opioids Page"),
-                         p("Page 2 is more straightforward. It calculates the % or Count of fentanyl/benzo's in certain drugs by week. The percentages are only available if the median sample size per week is greater than 30. Percentages at less than 30 samples/week are more likely to be skewed. If for example 1/5 tests of MDMA in a week were positive for fentanyl the % would be 20%."),
+                         p("Page 2 is more straightforward. It calculates the % or Count of fentanyl/benzo's by week. The percentages are only available if the median number of tests per week is greater than 30. Percentages at less than 30 samples/week are more likely to be skewed.For example, if 1/5 tests of MDMA in a week were positive for fentanyl the % would be 20%."),
                          h1("Final Thoughts"),
-                         p("Any visualization is really just a choice about how to cut, or a tool for thinking with data. Rather than just having these particular ways of visualizing the data, I'd like to be able to create different representations or visualizations, which could facilitate our understanding of what the drug market looks like. This is a first attempt at thinking about this question, but I'd love for others to join and help.")
+                         p("Any visualization is a choice about how to cut, or a tool for thinking with data. Rather than just having these particular ways of visualizing the data, I'd like to create more options. If you are interested in learning more about R or about network visualization/analysis, I recommend Katherine Ognyanova's tutorial available",a("here", href = "https://kateto.net/netscix2016.html"), "or Jesse Sadler's tutorial", a("here", href = "https://www.jessesadler.com/post/network-analysis-with-r/")),
+                           p("This is a first attempt at thinking about this question, but I'd love for others to join and help. I also have spent an incredible amount of time learning R to do this - If you're interested in helping develop this out, you can email me: alex.betsos@gmail.com"),
+                         p("This code is made available under the GNU General Public License 3.0. The code is publicly available, but it comes with the stipulation that if you use it, changes you make must too be made available to the public. Drug data is part of our Common - it is made from the knowledge of people who use drugs, and as such, should be available to them. Where I have asked for help on stackoverflow, I have provided the link in the code comments. If you want to see/access the code, my github repo can be found here:", a("My Github Repo", href = "https://github.com/alexbetsos/DC_Shiny"))
                          #Network Graph
                        )),
               tabPanel("Weekly Drug Checking Network",
@@ -261,11 +285,10 @@ ui <- fluidPage(
                                        sliderTextInput("Change",
                                                        label = NULL,
                                                        choices = as.character(poss.w$Days2),
-                                                       selected = as.character(unique(poss.w$Days2[
-                                                         poss.w$ID == get_id])),
-                                                       grid = TRUE,
+                                                       selected = as.character(poss.w$Days2[poss.w$ID %in% get_id]),
                                                        width = "1200px",
-                                                       force_edges = TRUE)),
+                                                       force_edges = TRUE,
+                                                       dragRange = TRUE)),
                                 column(width = 2, 
                                        div(style = "height:10px"),
                                        selectInput("Drug",
@@ -276,10 +299,17 @@ ui <- fluidPage(
                        fluidRow(style='padding:0px',
                                 column(width = 9, 
                                        offset = 0,
-                                       plotOutput("net", width = "85%",
-                                                  height = "700px")),
-                                
-                                column(width = 2, offset = 0.5,tableOutput("tafle")))),
+                                       plotOutput("net", width = "90%",
+                                                  height = "750px")),
+                                column(width = 2, offset = 0.5,tableOutput("tafle"),
+                                       checkboxGroupInput("regroup",
+                                                          label = "Regroup Variables",
+                                                          choices = regrouped$Classification,
+                                                          selected = NULL))),
+                            
+                       fluidRow(style='padding:50px', plotOutput("single")
+                       )
+              ),
               #Benzo % and Opioid %
               tabPanel("Benzos + Opioids",
                        fluidRow(column(width = 2,
@@ -289,31 +319,69 @@ ui <- fluidPage(
                                 column(width = 1, offset = 0,
                                        radioButtons("BF", "% Benzo or Fent",
                                                     choices = c("% Fentanyl", "% Benzo",
-                                                                "Count Fentanyl", 
-                                                                "Count Benzo"),
-                                                    selected = "Count Benzo")),
-                                column(width = 3, offset = 0, tableOutput("sumtable"))),
+                                                                "Fentanyl Count", 
+                                                                "Benzo Count"),
+                                                    selected = "Benzo Count")),
+                                column(width = 6, offset = 0, tableOutput("sumtable"))),
                        plotOutput("Perc", width = "100%", height = 500)
               )
   ))
 #Server still needs to be fixed...
-server <- function(input, output) {
+server <- function(input, output, session) {
   #1st makes reactive df for the rest of the project
+  missing <- reactive({
+    poss.w$ID[as.character(poss.w$Days2) == input$Change[2]]- poss.w$ID[as.character(poss.w$Days2) == input$Change[1]]
+    
+  })
+  got_id <- reactive({as.vector(c(poss.w$ID[as.character(poss.w$Days2) == input$Change[2]],
+                                  poss.w$ID[as.character(poss.w$Days2) == input$Change[2]]-3))
+  })
+  
+  observeEvent(missing(), {
+    
+    new_selected <- c(as.character(poss.w$Days2[poss.w$ID %in% got_id()]))
+    #c(as.character(poss.w$Days2[input$Change[2]]), as.character(poss.w$Days2[poss.w$ID == got_id]))
+    
+    if(missing() > 3){
+      updateSliderTextInput(session,inputId = "Change", choices = as.character(poss.w$Days2), selected = new_selected)
+      showNotification("Max Distance is 1 month")
+      #ObserveEvent: https://stackoverflow.com/questions/45033432/limit-sliderinput-to-a-subrange
+    }
+    
+  })
   df_react <- reactive({
     dcbc2 %>%
-      filter(Expected.Substance == input$Drug & Week.val == input$Change)
+      filter(Expected.Substance == input$Drug & Week.val <= input$Change[2] & Week.val >=input$Change[1])
   })
+  df_react2 <- reactive({
+    if(!is.null(input$regroup)){
+      df_react() %>%
+        dplyr::rename(Names = value) %>%
+        left_join(node_col[,c(2:3)]) %>%
+        mutate(Classification2 = ifelse(Classification %in% input$regroup, Classification, Names)) %>%
+        rename(value = Classification2)
+    } else {
+      df_react()
+    }
+  })
+  
   #Nodes for the Social Network Visualization
   nodes <- reactive({
-    down.node %>%
-      filter(Expected == input$Drug & as.character(Week.val) == input$Change) %>%
+    node <-  df_react2() %>%
+      select(value) %>%
+      count(value) %>%
+      dplyr::rename(Names = value, Weight = n) %>%
+      left_join(node_col) %>%
       select(ID, Names, Weight, Classification) %>%
       arrange(desc(Weight))
+    node$Weight[grepl("No Cuts", node$Names)] <- node$Weight[grepl("No Cuts", node$Names)]/2
+    return(node)
   })
   #Edges for SN
+  #The nesting solution was a huge help from a user on stackoverflow
+  #This code doesn't work without it: https://stackoverflow.com/a/63083986/7263991
   edges2 <- reactive({
-    req(df_react() != 0)
-    df_react() %>%
+    df_react2() %>%
       select(ID, value) %>%
       nest(data=(value)) %>%
       mutate(pairs=map(data, ~as_tibble(t(combn(.$value, 2))), .name_repair=T, .keep)) %>%
@@ -323,9 +391,8 @@ server <- function(input, output) {
       summarise(amount = n()) %>%
       ungroup()
   })
-  #3 dimensional
+  #3 dimensions
   edges3 <- reactive({
-    req(df_react() != 0)
     dcbc3 <- df_react()
     if("FTIR.3" %in% dcbc3$name){
       dcbc3 <- dcbc3 %>%
@@ -348,29 +415,32 @@ server <- function(input, output) {
     } else {
       dcbc3 <- data.frame(Drug = "No 3rd group", amount = 0)
     }
-    
   })
   output$net <- renderPlot({
     edges <- edges2()
     validate(
-      need(nrow(edges) >1, "Not tested During this Time")
+      need(nrow(edges) >0.9, "Not tested During this Time")
     )
-
     colnames(edges) <- c("to", "from", "weight")
     edges$from <- nodes()$ID[match(edges$from, nodes()$Names)]
     edges$to <- nodes()$ID[match(edges$to, nodes()$Names)]
     edges <- select(edges, from, to, weight)
-
+    
     g <- graph_from_data_frame(d = edges, vertices = nodes(), directed = FALSE) 
     g <- simplify(g, remove.loops = TRUE)
-    if(grepl("Fentanyl/Down", input$Drug) == TRUE){
+    if(input$Drug %in% c(V(g)$Names, "Fentanyl/Down", "All Opioids (Grouped)") & 
+       nrow(edges) >=10){
       #Checks if there is just one graph or several
       if(is.connected(g) == FALSE){
         #if true then, it splits the main graph from the subgraphs
         c <- clusters(g); cn <- cbind(V(g), c$membership)
         lc <- which(which.max(c$csize)==c$membership);
         gs <- induced.subgraph(g, lc)
-        st1 <- layout_as_star(gs, center = V(gs)$Names == "Fentanyl or Analog")
+        if(input$Drug == "All Opioids (Grouped)"|input$Drug == "Fentanyl/Down"){
+          st1 <- layout_as_star(gs, center = V(gs)$Names == "Fentanyl or Analog")
+        }else{
+          st1 <- layout_as_star(gs, center = V(gs)$Names == input$Drug)
+        }
         st1 <- norm_coords(st1, xmin = -0.6, xmax = 0.6, 
                            ymin = -0.6, ymax = +0.6,
                            zmin = -0.6, zmax = +0.6)
@@ -384,7 +454,7 @@ server <- function(input, output) {
         g <- gs %du% gs2
         t_lay <- create_layout(g, test2)
       }else{
-        st1 <- layout_as_star(g, center = V(g)$Names == "Fentanyl or Analog")
+        st1 <- layout_as_star(g, center = V(g)$Names == input$Drug)
         st1 <- norm_coords(st1, xmin = -0.8, xmax = 0.8, 
                            ymin = -0.8, ymax = +0.8,
                            zmin = -0.8, zmax = +0.8)
@@ -393,7 +463,9 @@ server <- function(input, output) {
       #For every other drug sample - still WIP
     } else {
       t_lay <- create_layout(g, layout = "nicely")
+      
     }
+    
     #Set graph space limits
     x_max <- max(t_lay$x)+0.1
     x_min <- min(t_lay$x)-0.1
@@ -414,8 +486,8 @@ server <- function(input, output) {
                                               aes.overide = list(hjust = 0.5))) +
       coord_cartesian(ylim = c(y_min, y_max), xlim = c(x_min, x_max)) +
       geom_node_text(aes(label = V(g)$Names), size = 6) +
-      scale_size(breaks = c(1,10,20,40, 60), label=scales::number,
-                 range = c(1,40), limits = c(1,100), name = "Size of Node",
+      scale_size(breaks = c(1,10,20,40, 60,80, 100), label=scales::number,
+                 range = c(1,60), limits = c(1,300), name = "# of Times Drug Found \n in Test Results",
                  guide = guide_legend(order = 1,
                                       nrow = 8,
                                       label.hjust =0.5)) +
@@ -441,6 +513,7 @@ server <- function(input, output) {
       guides(color = guide_legend(override.aes = list(size=10)))
     
   })
+  
   output$tafle <- renderTable({
     
     top_node <- nodes() 
@@ -453,6 +526,7 @@ server <- function(input, output) {
     edge2 <- edges2() %>%
       unite("Drug", V1:V2, sep = ", ") %>%
       arrange(desc(amount))
+    edge2 <- edge2[!grepl("No Cuts", edge2$Drug),]
     edges33 <- edges3()
     
     graph_table <- rbind(top_node[1,], edge2[1,], edges33[1,])
@@ -462,16 +536,38 @@ server <- function(input, output) {
     xtable::xtable(graph_table, align = rep("c",4))
     
   })
+  output$single <- renderPlot({
+    date_change <- gsub("\\Q\n\\E", " ", input$Change)
+    nodes() %>%
+      mutate(Names = str_replace(Names, "No Cuts\\Q\n\\E", "")) %>%
+      select(Names, Classification, Weight) %>%
+      group_by(Names, Classification) %>%
+      summarise(Weight = sum(Weight)) %>%
+      ungroup() %>%
+      arrange(Classification, Weight) %>%
+      mutate(Names = factor(Names, levels = Names)) %>%
+      ggplot(., aes(x =Names, y=Weight, fill = Classification))+
+      geom_bar(stat = "identity") +
+      scale_fill_manual(values = my_colors, name = "Class of Drug",
+                        guide = guide_legend(order = 2, 
+                                             nrow = 6,
+                                             aes.overide = list(hjust = 0.5))) +
+      scale_x_discrete(expand = c(0,0)) +
+      scale_y_continuous(expand = c(0,0), limits = c(0, max(nodes()$Weight)+5)) +
+      theme_classic() +
+      theme(legend.position = "none") +
+      labs(title = paste("Count of Drugs Found in", input$Drug, "Samples on",date_change, sep = " "), x = "Drugs",
+           y = "Number of Occurrences") +
+      coord_flip()
+  })
   
   #Second Page data
   shiny.benzo <-reactive({benzo %>%
       filter(Expected.Substance == input$DC & name == input$BF)
   })
-  shiny.benzo2 <-reactive({benzo %>%
-      filter(Expected.Substance == input$DC & name == input$BF)
-  })
+
   output$Perc <- renderPlot({
-    
+    #Creates conditional to not run % if n too small
     a <- "a"
     testing <- median(shiny.benzo()$tot)
     count.perc <- input$BF[grepl("\\Q%\\E|Count", input$BF)]
@@ -493,9 +589,8 @@ server <- function(input, output) {
       benzo.max <- max(shiny.benzo()$Percent)
     }
     
-    
     graph <- ggplot(shiny.benzo(), aes(x =Days2, y = Percent)) +
-      geom_line(group = 1, size = 1) + 
+      geom_path(group = 1, size = 1) + 
       geom_point(size = 2) +
       scale_x_discrete(breaks = every_nth(n = 3)) +
       scale_y_continuous(limits = c(0, benzo.max+5)) +
@@ -505,25 +600,30 @@ server <- function(input, output) {
       theme(plot.title = element_text(hjust = 0.5, size = 30),
             axis.text = element_text(size = 10),
             axis.title = element_text(size = 20))
-    graph + annotate(geom = "text", x = closure2[2], 
-                     y = max(benzo.max)/5, label = "Services Closed")
+    graph + annotate(geom = "text", x = 13, 
+                     y = 12, label = "Services Closed")
   })
   
-  
+  #Makes Table on page 2
   output$sumtable <- renderTable({
-    new_table <-shiny.benzo2() %>%
+    new_table <-shiny.benzo() %>%
       mutate(Max.Date = ifelse(length(unique(Days2[which(tot == max(tot))])) ==1,
                                paste(unique(Days2[which(tot == max(tot))])),
-                               paste(unique(Days2[which(tot == max(tot))]),collapse = "\nAND\n"))) %>%
+                               paste(unique(Days2[which(tot == max(tot))]),collapse = " AND\n"))) %>%
       summarize(Expected.Substance = unique(Expected.Substance),
                 Max_Tested = max(tot), Mean =mean(tot), Median =  mean(tot[tot>0]), 
                 Max.Date = unique(Max.Date))
+    new_table$Max.Date <- gsub("([A-Za-z]+ [0-9]+)-\n([A-Za-z]+ [0-9]+)", 
+                               "\\1 \\2 \\3", new_table$Max.Date)
     colnames(new_table) <- c("Expected\nSubstance", "Max Tested\nDuring Period", 
                              "Mean Tests\n(not including 0's)","Median\n(not including 0's)", 
                              "Top Testing Date")
+    
     xtable::xtable(new_table, align = rep("c",6))
   })
 } 
 
 shinyApp(ui = ui, server = server)
+
+
 
