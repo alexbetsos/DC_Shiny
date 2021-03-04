@@ -301,11 +301,12 @@ ui <- fluidPage(
                                        offset = 0,
                                        plotOutput("net", width = "90%",
                                                   height = "750px")),
-                                column(width = 2, offset = 0.5,tableOutput("tafle"),
+                                column(width = 2, offset = 0.5,
                                        checkboxGroupInput("regroup",
                                                           label = "Regroup Variables",
                                                           choices = regrouped$Classification,
-                                                          selected = NULL))),
+                                                          selected = NULL),
+                                       tableOutput("tafle"))),
                             
                        fluidRow(style='padding:50px', plotOutput("single")
                        )
@@ -503,7 +504,7 @@ server <- function(input, output, session) {
             legend.box.spacing = unit(0,"cm"),
             legend.title.align = 0.2,
             legend.text.align = 0.4,
-            legend.title=element_text(size=15),
+            legend.title=element_text(size=14),
             legend.key.width = unit(0.5, "cm"),
             legend.key.height = unit(0.2, "cm"),
             legend.spacing = unit(0, "cm"),
