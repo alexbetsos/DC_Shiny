@@ -392,6 +392,7 @@ server <- function(input, output, session) {
       summarise(amount = n()) %>%
       ungroup()
   })
+  
   #3 dimensions
   edges3 <- reactive({
     dcbc3 <- df_react()
