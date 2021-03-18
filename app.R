@@ -299,7 +299,7 @@ ui <- fluidPage(
                        fluidRow(style='padding:0px',
                                 column(width = 9, 
                                        offset = 0,
-                                       plotOutput("net", width = "90%",
+                                       plotOutput("net", width = "100%",
                                                   height = "750px")),
                                 column(width = 2, offset = 0.5,tableOutput("tafle"),
                                        checkboxGroupInput("regroup",
@@ -474,43 +474,48 @@ server <- function(input, output, session) {
     par(mar = c(0, 0, 0, 0))
     ggraph(t_lay) +
       geom_edge_link0(aes(width = E(g)$weight), colour = "grey") +   # add edges to the plot
-      scale_edge_width_continuous(breaks = c(1, 5, 10,15, 20, 25),
-                                  label = c(1, 5, 10,15, 20, 25),
-                                  range = c(1,7), name = "Frequency Found\nTogether",
-                                  limits = c(0,40),
-                                  guide = guide_legend(order = 3, nrow = 3, ncol =3)) +
+      scale_edge_width_continuous(breaks = c(1, 5, 10, 25, 50,100),
+                                  label = c(1, 5, 10, 25, 50, 100),
+                                  range = c(1,20), name = "Frequency Found Together",
+                                  limits = c(0,200),
+                                  guide = guide_legend(order = 2, 
+                                                       nrow = 1,
+                                                       ncol =7)) +
       geom_node_point(aes(size = V(g)$Weight, color = V(g)$Classification)) +
       scale_color_manual(values = my_colors, name = "Class of Drug",
-                         guide = guide_legend(order = 2, 
-                                              nrow = 6,
-                                              aes.overide = list(hjust = 0.5))) +
+                         guide = guide_legend(order = 3, 
+                                              ncol = 4,
+                                              nrow = 2)) +
       coord_cartesian(ylim = c(y_min, y_max), xlim = c(x_min, x_max)) +
       geom_node_text(aes(label = V(g)$Names), size = 6) +
       scale_size(breaks = c(1,10,20,40, 60,80, 100), label=scales::number,
                  range = c(1,60), limits = c(1,300), name = "# of Times Drug Found \n in Test Results",
                  guide = guide_legend(order = 1,
-                                      nrow = 8,
+                                      nrow = 4,
+                                      ncol = 2,
                                       label.hjust =0.5)) +
       theme(legend.position= "right",
             legend.box.background = element_blank(),
             legend.direction = "vertical",
             legend.key = element_blank(),
-            legend.background = element_blank(),
+            legend.background = element_rect(color = "green"),
             legend.text = element_text(size=12, hjust  = 0.4, inherit.blank = TRUE),
             legend.box.just = "top",
             legend.box = "vertical",
-            legend.justification = "left",
-            legend.box.spacing = unit(0,"cm"),
+            legend.justification = "right",
+            legend.box.spacing = unit(0.5,"cm"),
             legend.title.align = 0.2,
             legend.text.align = 0.4,
             legend.title=element_text(size=15),
             legend.key.width = unit(0.5, "cm"),
             legend.key.height = unit(0.2, "cm"),
-            legend.spacing = unit(0, "cm"),
+            legend.spacing = unit(0.5, "cm"),
             panel.background = element_blank(),
             legend.box.margin = margin(t = 0, r = 0, b = 0, l = 0, unit = "cm"),
             legend.margin = margin(0,0, 0, 0, unit = "cm"))+
-      guides(color = guide_legend(override.aes = list(size=10)))
+      guides(color = guide_legend(override.aes = list(size=10),
+                                  nrow = 5,
+                                  ncol = 2))
     
   })
   
